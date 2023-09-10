@@ -44,6 +44,28 @@ struct an_gpu_context {
     struct pipeline *pipelines[PIPELINE_COUNT];
 };
 
+const char *validationLayer = "VK_LAYER_KHRONOS_validation";
+
+static int
+hasValidationLayer () {
+    int result = 0;
+    uint32_t layerCount;
+    vkEnumerateInstanceLayerProperties(&layerCount, NULL);
+
+    VkLayerProperties *layers = malloc (sizeof (VkLayerProperties) * layerCount);
+    vkEnumerateInstanceLayerProperties(&layerCount, layers);
+
+    for (int i=0; i<layerCount; i++) {
+        if (strcmp (validationLayer, layers[i].layerName) == 0) {
+            result = 1;
+            break;
+        }
+    }
+
+    free (layers);
+    return result;
+}
+
 /* =================
  * =================
  * === Pipelines ===
@@ -343,6 +365,11 @@ find_device (VkInstance instance) {
 
 static VkResult
 create_instance (VkInstance *instance) {
+    int validationLayerEnabled = hasValidationLayer ();
+    if (validationLayerEnabled) {
+        printf ("Enabling validation layer\n");
+    }
+
     VkApplicationInfo appInfo;
     ZERO(appInfo);
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
@@ -356,6 +383,8 @@ create_instance (VkInstance *instance) {
     ZERO(createInfo);
     createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     createInfo.pApplicationInfo = &appInfo;
+    createInfo.enabledLayerCount = validationLayerEnabled;
+    createInfo.ppEnabledLayerNames = validationLayerEnabled ? &validationLayer : NULL;
 
     return vkCreateInstance(&createInfo, NULL, instance);
 }
