@@ -7,6 +7,8 @@
 #include <vulkan/vulkan.h>
 #include "annealing-lowlevel.h"
 
+#include <shader-source.h>
+
 #define ZERO(x) memset(&(x), 0, sizeof(x))
 
 #define DESCRIPTORS_IN_POOL 10
@@ -268,19 +270,22 @@ cleanup:
 
 static struct pipeline*
 create_cfupdate_pipeline (VkDevice device, VkDescriptorPool descPool) {
-    return create_pipeline_layout (device, descPool, "/home/vasily/development/material-reconstruction-lowlevel/update-s2.spv",
+    return create_pipeline_layout (device, descPool,
+                                   SHADER_SOURCE "update-s2.spv",
                                    2, sizeof (struct CFUpdateData));
 }
 
 static struct pipeline*
 create_metric_pipeline (VkDevice device, VkDescriptorPool descPool) {
-    return create_pipeline_layout (device, descPool, "/home/vasily/development/material-reconstruction-lowlevel/metric.spv",
+    return create_pipeline_layout (device, descPool,
+                                   SHADER_SOURCE "metric.spv",
                                    3, sizeof (struct MetricUpdateData));
 }
 
 static struct pipeline*
 create_reduce_pipeline (VkDevice device, VkDescriptorPool descPool) {
-    return create_pipeline_layout (device, descPool, "/home/vasily/development/material-reconstruction-lowlevel/reduce.spv",
+    return create_pipeline_layout (device, descPool,
+                                   SHADER_SOURCE "reduce.spv",
                                    1, sizeof (struct MetricUpdateData));
 }
 
