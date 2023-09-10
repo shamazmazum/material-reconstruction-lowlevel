@@ -1,0 +1,26 @@
+#version 440
+
+layout(local_size_x = 64) in;
+
+layout(std430, binding = 0) buffer lay0 {
+    float cf[];
+};
+
+layout(std430, binding = 1) buffer lay1 {
+    vec2 image[];
+};
+
+layout(std430, binding = 2) buffer lay2 {
+    float aoutput[];
+};
+
+layout(push_constant) uniform Parameters {
+    uint len;
+} params;
+
+void main () {
+    uint idx = gl_GlobalInvocationID.x;
+    if (idx < params.len) {
+        aoutput[idx] = pow(cf[idx] - dot(image[idx], image[idx]), 2);
+    }
+}

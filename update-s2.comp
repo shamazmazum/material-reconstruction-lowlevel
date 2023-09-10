@@ -1,0 +1,46 @@
+#version 440
+
+#define M_PI 3.141592653589793
+
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+layout(std430, binding = 0) buffer lay0 {
+    vec2 ainput[];
+};
+
+layout(std430, binding = 1) buffer lay1 {
+    vec2 aoutput[];
+};
+
+/* Rank in always 3. Unused dimensions must be equal to 1 */
+layout(push_constant, std430) uniform Parameters {
+    uvec3 actual_dimensions;
+    uvec3 logical_dimensions;
+    uvec3 stride;
+    uvec3 point;
+
+    uint  unused;
+    float c;
+    uint  ndim;
+} updateData;
+
+void main() {
+    uvec3 gid = gl_GlobalInvocationID;
+    for (uint i = 0; i < updateData.ndim; i++) {
+        if (gid[i] >= updateData.actual_dimensions[i]) {
+            return;
+        }
+    }
+
+    uint idx = 0;
+    float angle = 0;
+    for (int i = 0; i < updateData.ndim; i++) {
+        angle += float(updateData.point[i]) * float(gid[i]) /
+            float(updateData.logical_dimensions[i]);
+        idx += updateData.stride[i] * gid[i];
+    }
+
+    angle = 2 * M_PI * angle;
+    aoutput[idx].x = ainput[idx].x + updateData.c * cos(angle);
+    aoutput[idx].y = ainput[idx].y - updateData.c * sin(angle);
+}
