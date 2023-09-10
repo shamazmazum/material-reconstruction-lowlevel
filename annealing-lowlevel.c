@@ -45,7 +45,7 @@ struct an_gpu_context {
 };
 
 const char *validationLayer = "VK_LAYER_KHRONOS_validation";
-const int enableValidation = 0;
+const int enableValidation = 1;
 
 static int
 hasValidationLayer () {
@@ -605,72 +605,33 @@ free_image_memory (VkDevice device, struct image_memory *imemory) {
 
 static int
 write_data (VkDevice device, struct image_memory *imageMemory,
-            const float *real, const float *imag,
-            size_t actual_size) {
-    void *ptr;
-    mycomplex *data;
-    VkResult result;
-
-    result = vkMapMemory (device, imageMemory->memory,
-                          0, actual_size * sizeof (mycomplex),
-                          0, &ptr);
-    if (result != VK_SUCCESS) {
-        fprintf (stderr, "Cannot map memory\n");
-        return 0;
-    }
-
-    data = ptr;
-    for (size_t i = 0; i < actual_size; i++) {
-        data[i].re = real[i];
-        data[i].im = imag[i];
-    }
-
-    vkUnmapMemory (device, imageMemory->memory);
-    return 1;
-}
-
-static int
-write_cf_data (VkDevice device, struct image_memory *imageMemory,
-               const float *cf, size_t actual_size) {
+            const void *data, size_t size) {
     void *ptr;
     VkResult result;
 
     result = vkMapMemory (device, imageMemory->memory,
-                          0, actual_size * sizeof (float),
-                          0, &ptr);
+                          0, size, 0, &ptr);
     if (result != VK_SUCCESS) {
         fprintf (stderr, "Cannot map memory\n");
         return 0;
     }
-
-    memcpy(ptr, cf, sizeof(float) * actual_size);
-
+    memcpy(ptr, data, size);
     vkUnmapMemory (device, imageMemory->memory);
     return 1;
 }
 
 static int
 read_data (VkDevice device, struct image_memory *imageMemory,
-           float *real, float *imag,
-           size_t actual_size) {
+           void *data, size_t size) {
     void *ptr;
-    mycomplex *data;
     VkResult result;
 
-    result = vkMapMemory (device, imageMemory->memory,
-                          0, actual_size * sizeof (mycomplex),
-                          0, &ptr);
+    result = vkMapMemory (device, imageMemory->memory, 0, size, 0, &ptr);
     if (result != VK_SUCCESS) {
         fprintf (stderr, "Cannot map memory\n");
         return 0;
     }
-
-    data = ptr;
-    for (size_t i = 0; i < actual_size; i++) {
-        real[i] = data[i].re;
-        imag[i] = data[i].im;
-    }
-
+    memcpy (data, ptr, size);
     vkUnmapMemory (device, imageMemory->memory);
     return 1;
 }
@@ -789,6 +750,8 @@ an_create_image (struct an_gpu_context *ctx,
         return NULL;
     }
 
+    mycomplex *data = NULL;
+
     struct an_image *image = malloc (sizeof (struct an_image));
     memset (image, 0, sizeof (struct an_image));
 
@@ -836,12 +799,20 @@ an_create_image (struct an_gpu_context *ctx,
         goto cleanup;
     }
 
-    if (!write_data (ctx->device, image->inputMemory, real, imag, image->actual_size)) {
+    data = malloc (image->actual_size * sizeof (mycomplex));
+    for (int i = 0; i < image->actual_size; i++) {
+        data[i].re = real[i];
+        data[i].im = imag[i];
+    }
+
+    if (!write_data (ctx->device, image->inputMemory, data,
+                     sizeof (mycomplex) * image->actual_size)) {
         fprintf (stderr, "Cannot write data to image memory\n");
         goto cleanup;
     }
 
-    if (!write_data (ctx->device, image->outputMemory, real, imag, image->actual_size)) {
+    if (!write_data (ctx->device, image->outputMemory, data,
+                     sizeof (mycomplex) * image->actual_size)) {
         fprintf (stderr, "Cannot write data to image memory\n");
         goto cleanup;
     }
@@ -858,9 +829,11 @@ an_create_image (struct an_gpu_context *ctx,
     }
 
     image->savedMemory = image->inputMemory;
+    free (data);
     return image;
 
 cleanup:
+    free (data);
     an_destroy_image (image);
     return NULL;
 }
@@ -869,8 +842,15 @@ int
 an_image_get (struct an_image *image,
               float           *real,
               float           *imag) {
-    return read_data (image->ctx->device, image->outputMemory, real, imag,
-                      image->actual_size);
+    mycomplex *data = malloc (sizeof (mycomplex) * image->actual_size);
+    int res = read_data (image->ctx->device, image->outputMemory, data,
+                         sizeof (mycomplex) * image->actual_size);
+    for (int i = 0; i < image->actual_size; i++) {
+        real[i] = data[i].re;
+        imag[i] = data[i].im;
+    }
+    free (data);
+    return res;
 }
 
 void
@@ -1025,7 +1005,8 @@ an_create_corrfn (struct an_gpu_context *ctx,
         goto cleanup;
     }
 
-    if (!write_cf_data (ctx->device, image->outputMemory, corrfn, image->actual_size)) {
+    if (!write_data (ctx->device, image->outputMemory, corrfn,
+                     sizeof (float) * image->actual_size)) {
         fprintf (stderr, "Cannot write data to image memory\n");
         goto cleanup;
     }
