@@ -12,8 +12,13 @@
 #define ZERO(x) memset(&(x), 0, sizeof(x))
 
 #define DESCRIPTORS_IN_POOL 10
-#define UPDATE_GRP_SIZE 16
 #define METRIC_GRP_SIZE 64
+
+const unsigned int update_group_sizes[] = {
+    64,  1, 1,
+    16, 16, 1,
+    8,   8, 8
+};
 
 enum pipeline_type {
     PIPELINE_CFUPDATE = 0,
@@ -118,11 +123,7 @@ create_pipelines (VkDevice device, VkPipelineCache cache, struct pipeline *pipel
         specEntry[i].size = sizeof(int);
     }
 
-    int groupSize[MAX_DIMENSIONS];
-    for (int i = 0; i < MAX_DIMENSIONS; i++) {
-        groupSize[i] = (i < ndim) ? UPDATE_GRP_SIZE : 1;
-    }
-
+    const unsigned int *groupSize = &update_group_sizes[MAX_DIMENSIONS * (ndim - 1)];
     specInfos[PIPELINE_CFUPDATE].mapEntryCount = 3;
     specInfos[PIPELINE_CFUPDATE].pMapEntries = specEntry;
     specInfos[PIPELINE_CFUPDATE].dataSize = 3 * sizeof(int);
@@ -916,10 +917,10 @@ an_create_image (struct an_gpu_context *ctx,
     }
 
     /* Number of work groups */
+    const unsigned int *grpSize = &update_group_sizes[MAX_DIMENSIONS * (ndim - 1)];
     for (uint32_t i = 0; i < MAX_DIMENSIONS; i++) {
         image->ngroups[i] = (i < ndim) ?
-            ceil((double)image->updateData.actual_dimensions[i] / (double) UPDATE_GRP_SIZE) :
-            1;
+            ceil((double)image->updateData.actual_dimensions[i] / (double) grpSize[i]) : 1;
     }
 
     if (!create_command_buffer (ctx->device, ctx->cmdPool, &image->commandBuffer)) {
