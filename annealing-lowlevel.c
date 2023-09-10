@@ -45,6 +45,7 @@ struct an_gpu_context {
 };
 
 const char *validationLayer = "VK_LAYER_KHRONOS_validation";
+const int enableValidation = 0;
 
 static int
 hasValidationLayer () {
@@ -366,8 +367,8 @@ find_device (VkInstance instance) {
 
 static VkResult
 create_instance (VkInstance *instance) {
-    int validationLayerEnabled = hasValidationLayer ();
-    if (validationLayerEnabled) {
+    int validation = hasValidationLayer () && enableValidation;
+    if (validation) {
         printf ("Enabling validation layer\n");
     }
 
@@ -384,8 +385,8 @@ create_instance (VkInstance *instance) {
     ZERO(createInfo);
     createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     createInfo.pApplicationInfo = &appInfo;
-    createInfo.enabledLayerCount = validationLayerEnabled;
-    createInfo.ppEnabledLayerNames = validationLayerEnabled ? &validationLayer : NULL;
+    createInfo.enabledLayerCount = validation ? 1 : 0;
+    createInfo.ppEnabledLayerNames = validation ? &validationLayer : NULL;
 
     return vkCreateInstance(&createInfo, NULL, instance);
 }
