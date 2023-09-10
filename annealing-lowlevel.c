@@ -875,7 +875,6 @@ an_create_image (struct an_gpu_context *ctx,
     }
 
     printf ("Actual buffer size: %lu\n", image->actual_size * sizeof (mycomplex));
-    /* FIXME: Check usage */
     image->inputMemory = create_buffer (ctx->physDev, ctx->device,
                                         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
                                         VK_BUFFER_USAGE_TRANSFER_DST_BIT |
@@ -1085,7 +1084,6 @@ an_create_corrfn (struct an_gpu_context *ctx,
     /* Store correlation data here */
     image->outputMemory = create_buffer (ctx->physDev, ctx->device,
                                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-                                         VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
                                          VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                          image->actual_size * sizeof(float));
@@ -1097,8 +1095,7 @@ an_create_corrfn (struct an_gpu_context *ctx,
     /* Temporary buffer for metric */
     image->metricMemory = create_buffer (ctx->physDev, ctx->device,
                                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-                                         VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
-                                         VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                         VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                          image->actual_size * sizeof(float));
     if (image->metricMemory == NULL) {
