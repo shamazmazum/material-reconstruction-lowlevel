@@ -97,6 +97,7 @@ create_descriptor_pool (VkDevice device, VkDescriptorPool *pool) {
     poolInfo.poolSizeCount = 1;
     poolInfo.pPoolSizes = &poolSize;
     poolInfo.maxSets = DESCRIPTORS_IN_POOL;
+    poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
 
     return vkCreateDescriptorPool(device, &poolInfo, NULL, pool);
 }
@@ -765,8 +766,8 @@ an_destroy_image (struct an_image *image) {
         free_image_memory (ctx->device, image->metricMemory);
     }
 
-    if (image->inputMemory != NULL) {
-        free_image_memory (ctx->device, image->inputMemory);
+    if (image->savedMemory != NULL) {
+        free_image_memory (ctx->device, image->savedMemory);
     }
 
     if (image->outputMemory != NULL) {
@@ -856,7 +857,6 @@ an_create_image (struct an_gpu_context *ctx,
     }
 
     image->savedMemory = image->inputMemory;
-
     return image;
 
 cleanup:
