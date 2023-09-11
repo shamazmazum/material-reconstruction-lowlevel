@@ -15,21 +15,12 @@ layout(push_constant) uniform Parameters {
 shared float tmp[GRP_SIZE];
 
 void main() {
-    uint i;
-    uint global_size = gl_NumWorkGroups.x * GRP_SIZE;
-    float acc = 0;
+    uint gis = gl_GlobalInvocationID.x;
 
-    for (i=0; i<params.len; i+=global_size) {
-        uint idx = i + gl_GlobalInvocationID.x;
-        if (idx < params.len) {
-            acc += array[idx];
-        }
-    }
-    
-    tmp[gl_LocalInvocationID.x] = acc;
+    tmp[gl_LocalInvocationID.x] = (gis < params.len) ? array[gis] : 0;
     memoryBarrierShared();
 
-    for (i=GRP_SIZE>>1; i>0; i>>=1) {
+    for (uint i=GRP_SIZE>>1; i>0; i>>=1) {
         if (gl_LocalInvocationID.x < i) {
             tmp[gl_LocalInvocationID.x] += tmp[gl_LocalInvocationID.x + i];
         }

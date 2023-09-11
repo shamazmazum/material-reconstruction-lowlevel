@@ -1202,9 +1202,6 @@ invoke_metric_kernel (struct an_image *target,
 
 static void
 invoke_reduce_kernel (struct an_image *target) {
-    struct MetricUpdateData params;
-    params.length = target->actual_size;
-
     struct an_gpu_context *ctx = target->ctx;
     struct pipeline *reducePipeline = ctx->pipelines[PIPELINE_REDUCE];
 
@@ -1226,6 +1223,15 @@ invoke_reduce_kernel (struct an_image *target) {
 
     vkUpdateDescriptorSets (ctx->device, 1, &dsSets, 0, NULL);
 
+    VkMemoryBarrier memoryBarrier;
+    ZERO (memoryBarrier);
+    memoryBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    memoryBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    memoryBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+    struct MetricUpdateData params;
+    params.length = target->actual_size;
+
     VkCommandBufferBeginInfo beginInfo;
     ZERO(beginInfo);
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -1235,11 +1241,18 @@ invoke_reduce_kernel (struct an_image *target) {
     vkCmdBindDescriptorSets (target->commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE,
                              reducePipeline->pipelineLayout,
                              0, 1, &reducePipeline->descriptorSet, 0, NULL);
-    vkCmdPushConstants (target->commandBuffer, reducePipeline->pipelineLayout,
-                        VK_SHADER_STAGE_COMPUTE_BIT, 0,
-                        sizeof (struct MetricUpdateData), &params);
-    vkCmdDispatch (target->commandBuffer, METRIC_GRP_SIZE, 1, 1);
-    vkCmdDispatch (target->commandBuffer, 1, 1, 1);
+    while (params.length > 0) {
+        int groups = ceil((double)params.length / (double)METRIC_GRP_SIZE);
+        vkCmdPushConstants (target->commandBuffer, reducePipeline->pipelineLayout,
+                            VK_SHADER_STAGE_COMPUTE_BIT, 0,
+                            sizeof (struct MetricUpdateData), &params);
+        vkCmdDispatch (target->commandBuffer, groups, 1, 1);
+        vkCmdPipelineBarrier(target->commandBuffer,
+                             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                             0, 1, &memoryBarrier, 0, NULL, 0, NULL);
+        params.length = (groups == 1) ? 0 : groups;
+    }
     vkEndCommandBuffer (target->commandBuffer);
 
     VkSubmitInfo submitInfo;
