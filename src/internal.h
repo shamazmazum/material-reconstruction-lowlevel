@@ -37,11 +37,44 @@ struct an_gpu_context {
     struct pipeline *pipelines[PIPELINE_COUNT];
 };
 
-/* Buffers */
+/* Command buffers */
+int
+an_create_command_buffer (struct an_gpu_context *ctx, VkCommandBuffer *buffer);
+
+/* Memory buffers */
 
 struct an_image_memory {
     VkBuffer buffer;
     VkDeviceMemory memory;
+};
+
+typedef union
+{
+    float __attribute__((aligned (8))) s[2];
+    __extension__ struct{ float  re, im; };
+} mycomplex;
+
+struct an_image {
+    struct an_gpu_context *ctx;
+    VkCommandBuffer commandBuffer;
+
+    struct CFUpdateData updateData;
+    size_t actual_size;
+    uint32_t ngroups[MAX_DIMENSIONS];
+
+    struct an_image_memory *inputMemory;
+    struct an_image_memory *outputMemory;
+    /* Not a separate buffer, just switches between other two */
+    struct an_image_memory *savedMemory;
+};
+
+struct an_corrfn {
+    struct an_gpu_context *ctx;
+    VkCommandBuffer commandBuffer;
+    size_t actual_size;
+
+    struct an_image_memory *corrfnMemory;
+    struct an_image_memory *metricMemory;
 };
 
 struct an_image_memory*

@@ -521,3 +521,23 @@ void an_destroy_context (struct an_gpu_context *ctx) {
 
     free (ctx);
 }
+
+int
+an_create_command_buffer (struct an_gpu_context *ctx, VkCommandBuffer *buffer) {
+    assert (ctx->device != VK_NULL_HANDLE && ctx->cmdPool != VK_NULL_HANDLE);
+
+    VkResult result;
+    VkCommandBufferAllocateInfo cbAllocInfo;
+    ZERO(cbAllocInfo);
+    cbAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    cbAllocInfo.commandPool = ctx->cmdPool;
+    cbAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    cbAllocInfo.commandBufferCount = 1;
+
+    result = vkAllocateCommandBuffers (ctx->device, &cbAllocInfo, buffer);
+    if (result != VK_SUCCESS) {
+        fprintf (stderr, "Cannot allocate command buffer, code = %i\n", result);
+    }
+
+    return result == VK_SUCCESS;
+}

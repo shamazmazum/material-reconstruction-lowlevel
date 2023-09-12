@@ -16,8 +16,8 @@ int an_irfft (float              *array,
 #define MAX_DIMENSIONS 3
 
 struct an_gpu_context;
-
 struct an_image;
+struct an_corrfn;
 
 struct CFUpdateData {
     unsigned int actual_dimensions[MAX_DIMENSIONS + 1];
@@ -46,14 +46,17 @@ an_create_image (struct an_gpu_context *ctx,
                  const unsigned int    *dimensions,
                  unsigned int           ndim);
 
-struct an_image*
+void
+an_destroy_image (struct an_image *image);
+
+struct an_corrfn*
 an_create_corrfn (struct an_gpu_context *ctx,
                   const float           *corrfn,
                   const unsigned int    *dimensions,
                   unsigned int           ndim);
 
 void
-an_destroy_image (struct an_image *image);
+an_destroy_corrfn (struct an_corrfn *corrfn);
 
 void
 an_image_store_state (struct an_image *image);
@@ -75,6 +78,6 @@ an_image_get (struct an_image *image,
 
 /* Distance measurement */
 int
-an_distance (struct an_image *target,
-             struct an_image *recon,
-             float           *distance);
+an_distance (struct an_corrfn *target,
+             struct an_image  *recon,
+             float            *distance);
