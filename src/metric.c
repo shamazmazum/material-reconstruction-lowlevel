@@ -178,13 +178,20 @@ cleanup:
 }
 
 static void
-invoke_metric_kernel (struct an_metric *metric) {
+invoke_kernels (struct an_metric *metric) {
     struct an_gpu_context *ctx = metric->ctx;
     struct pipeline *metricPipeline = ctx->pipelines[PIPELINE_METRIC];
+    struct pipeline *reducePipeline = ctx->pipelines[PIPELINE_REDUCE];
     unsigned int actual_size = metric->recon->actual_size;
 
     struct MetricUpdateData params;
     params.length = actual_size;
+
+    VkMemoryBarrier memoryBarrier;
+    ZERO (memoryBarrier);
+    memoryBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    memoryBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    memoryBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
     VkCommandBufferBeginInfo beginInfo;
     ZERO(beginInfo);
@@ -192,6 +199,7 @@ invoke_metric_kernel (struct an_metric *metric) {
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
     vkBeginCommandBuffer (metric->commandBuffer, &beginInfo);
+    /* Calculate squared difference */
     vkCmdBindPipeline (metric->commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE,
                        metricPipeline->pipeline);
     vkCmdBindDescriptorSets (metric->commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE,
@@ -202,36 +210,12 @@ invoke_metric_kernel (struct an_metric *metric) {
                         sizeof (struct MetricUpdateData), &params);
     vkCmdDispatch (metric->commandBuffer,
                    ceil((double) actual_size / (double)METRIC_GRP_SIZE), 1, 1);
-    vkEndCommandBuffer (metric->commandBuffer);
+    vkCmdPipelineBarrier(metric->commandBuffer,
+                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                         0, 1, &memoryBarrier, 0, NULL, 0, NULL);
 
-    VkSubmitInfo submitInfo;
-    ZERO(submitInfo);
-    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &metric->commandBuffer;
-    vkQueueSubmit (ctx->queue, 1, &submitInfo, VK_NULL_HANDLE);
-    vkQueueWaitIdle(ctx->queue);
-}
-
-static void
-invoke_reduce_kernel (struct an_metric *metric) {
-    struct an_gpu_context *ctx = metric->ctx;
-    struct pipeline *reducePipeline = ctx->pipelines[PIPELINE_REDUCE];
-    unsigned int actual_size = metric->recon->actual_size;
-
-    VkMemoryBarrier memoryBarrier;
-    ZERO (memoryBarrier);
-    memoryBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-    memoryBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    memoryBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-
-    struct MetricUpdateData params;
-    params.length = actual_size;
-
-    VkCommandBufferBeginInfo beginInfo;
-    ZERO(beginInfo);
-    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    vkBeginCommandBuffer (metric->commandBuffer, &beginInfo);
+    /* Reduce */
     vkCmdBindPipeline (metric->commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE,
                        reducePipeline->pipeline);
     vkCmdBindDescriptorSets (metric->commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE,
@@ -243,11 +227,13 @@ invoke_reduce_kernel (struct an_metric *metric) {
                             VK_SHADER_STAGE_COMPUTE_BIT, 0,
                             sizeof (struct MetricUpdateData), &params);
         vkCmdDispatch (metric->commandBuffer, groups, 1, 1);
-        vkCmdPipelineBarrier(metric->commandBuffer,
-                             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                             0, 1, &memoryBarrier, 0, NULL, 0, NULL);
         params.length = (groups == 1) ? 0 : groups;
+        if (params.length > 0) {
+            vkCmdPipelineBarrier(metric->commandBuffer,
+                                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                 0, 1, &memoryBarrier, 0, NULL, 0, NULL);
+        }
     }
     vkEndCommandBuffer (metric->commandBuffer);
 
@@ -257,17 +243,16 @@ invoke_reduce_kernel (struct an_metric *metric) {
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &metric->commandBuffer;
     vkQueueSubmit (ctx->queue, 1, &submitInfo, VK_NULL_HANDLE);
-    vkQueueWaitIdle(ctx->queue);
 }
 
 int
 an_distance (struct an_metric *metric,
              float            *distance) {
     update_recon_descriptor (metric);
-    invoke_metric_kernel (metric);
-    invoke_reduce_kernel (metric);
+    invoke_kernels (metric);
 
     struct an_gpu_context *ctx = metric->ctx;
+    vkQueueWaitIdle(ctx->queue);
     if (!an_read_data (ctx, metric->metricMemory, distance, sizeof (float))) {
         fprintf (stderr, "Cannot read metric\n");
         return 0;
