@@ -1,5 +1,4 @@
-#ifndef __ANNEALING_LL__
-#define __ANNEALING_LL__
+#pragma once
 
 /* Fourier transform */
 int an_rfft (const float         *array,
@@ -79,5 +78,3 @@ int
 an_distance (struct an_image *target,
              struct an_image *recon,
              float           *distance);
-
-#endif
