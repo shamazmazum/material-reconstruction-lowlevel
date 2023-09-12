@@ -85,15 +85,8 @@ static int
 copy_buffer (struct an_gpu_context *ctx, VkBuffer source, VkBuffer destination,
              VkDeviceSize size) {
     VkResult result;
-    VkCommandBufferAllocateInfo allocInfo;
-    ZERO(allocInfo);
-    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    allocInfo.commandPool = ctx->cmdPool;
-    allocInfo.commandBufferCount = 1;
-
     VkCommandBuffer commandBuffer;
-    result = vkAllocateCommandBuffers(ctx->device, &allocInfo, &commandBuffer);
+    result = an_create_command_buffer (ctx, &commandBuffer);
     if (result != VK_SUCCESS) {
         return 0;
     }

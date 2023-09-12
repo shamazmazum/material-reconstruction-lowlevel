@@ -12,9 +12,32 @@
 #define METRIC_GRP_SIZE 64
 
 static void
-update_metric_descriptors (struct an_metric *metric) {
+update_recon_descriptor (struct an_metric *metric) {
     struct an_gpu_context *ctx = metric->ctx;
     struct an_image *recon = metric->recon;
+
+    VkDescriptorBufferInfo reconInfo;
+    ZERO(reconInfo);
+    reconInfo.buffer = recon->outputMemory->buffer;
+    reconInfo.offset = 0;
+    reconInfo.range = sizeof (mycomplex) * recon->actual_size;
+
+    VkWriteDescriptorSet dsSet;
+    ZERO (dsSet);
+    dsSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    dsSet.dstSet = metric->metricSet;
+    dsSet.dstBinding = 1; // binding #
+    dsSet.dstArrayElement = 0;
+    dsSet.descriptorCount = 1;
+    dsSet.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    dsSet.pBufferInfo = &reconInfo;
+
+    vkUpdateDescriptorSets (ctx->device, 1, &dsSet, 0, NULL);
+}
+
+static void
+update_metric_descriptors (struct an_metric *metric) {
+    struct an_gpu_context *ctx = metric->ctx;
     struct an_corrfn *target = metric->target;
 
     VkDescriptorBufferInfo cfInfo;
@@ -23,19 +46,13 @@ update_metric_descriptors (struct an_metric *metric) {
     cfInfo.offset = 0;
     cfInfo.range = sizeof (float) * target->actual_size;
 
-    VkDescriptorBufferInfo reconInfo;
-    ZERO(reconInfo);
-    reconInfo.buffer = recon->outputMemory->buffer;
-    reconInfo.offset = 0;
-    reconInfo.range = sizeof (mycomplex) * recon->actual_size;
-
     VkDescriptorBufferInfo outputInfo;
     ZERO(outputInfo);
     outputInfo.buffer = metric->metricMemory->buffer;
     outputInfo.offset = 0;
-    outputInfo.range = sizeof (float) * recon->actual_size;
+    outputInfo.range = sizeof (float) * target->actual_size;
 
-    VkWriteDescriptorSet dsSets[3];
+    VkWriteDescriptorSet dsSets[2];
     memset (dsSets, 0, sizeof (dsSets));
     dsSets[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     dsSets[0].dstSet = metric->metricSet;
@@ -47,21 +64,13 @@ update_metric_descriptors (struct an_metric *metric) {
 
     dsSets[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     dsSets[1].dstSet = metric->metricSet;
-    dsSets[1].dstBinding = 1; // binding #
+    dsSets[1].dstBinding = 2; // binding #
     dsSets[1].dstArrayElement = 0;
     dsSets[1].descriptorCount = 1;
     dsSets[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    dsSets[1].pBufferInfo = &reconInfo;
+    dsSets[1].pBufferInfo = &outputInfo;
 
-    dsSets[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    dsSets[2].dstSet = metric->metricSet;
-    dsSets[2].dstBinding = 2; // binding #
-    dsSets[2].dstArrayElement = 0;
-    dsSets[2].descriptorCount = 1;
-    dsSets[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    dsSets[2].pBufferInfo = &outputInfo;
-
-    vkUpdateDescriptorSets (ctx->device, 3, dsSets, 0, NULL);    
+    vkUpdateDescriptorSets (ctx->device, 2, dsSets, 0, NULL);
 }
 
 static void
@@ -180,6 +189,8 @@ invoke_metric_kernel (struct an_metric *metric) {
     VkCommandBufferBeginInfo beginInfo;
     ZERO(beginInfo);
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
     vkBeginCommandBuffer (metric->commandBuffer, &beginInfo);
     vkCmdBindPipeline (metric->commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE,
                        metricPipeline->pipeline);
@@ -252,6 +263,7 @@ invoke_reduce_kernel (struct an_metric *metric) {
 int
 an_distance (struct an_metric *metric,
              float            *distance) {
+    update_recon_descriptor (metric);
     invoke_metric_kernel (metric);
     invoke_reduce_kernel (metric);
 

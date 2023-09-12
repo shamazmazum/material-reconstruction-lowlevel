@@ -527,8 +527,8 @@ an_create_command_buffer (struct an_gpu_context *ctx, VkCommandBuffer *buffer) {
     VkCommandBufferAllocateInfo cbAllocInfo;
     ZERO(cbAllocInfo);
     cbAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    cbAllocInfo.commandPool = ctx->cmdPool;
     cbAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    cbAllocInfo.commandPool = ctx->cmdPool;
     cbAllocInfo.commandBufferCount = 1;
 
     return vkAllocateCommandBuffers (ctx->device, &cbAllocInfo, buffer);

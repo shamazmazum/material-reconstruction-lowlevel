@@ -172,9 +172,8 @@ an_create_image (struct an_gpu_context *ctx,
         goto cleanup;
     }
 
-    update_descriptors (image);
-
     image->savedMemory = image->inputMemory;
+    update_descriptors (image);
     return image;
 
 cleanup:
@@ -205,6 +204,7 @@ an_image_store_state (struct an_image *image) {
     image->savedMemory  = image->outputMemory;
     image->outputMemory = tmp;
     image->inputMemory  = image->savedMemory;
+    image->descriptorSetUpdatePending = 1;
 }
 
 void
@@ -215,6 +215,7 @@ an_image_rollback (struct an_image *image) {
     image->inputMemory  = image->savedMemory;
     image->outputMemory = image->savedMemory;
     image->savedMemory  = tmp;
+    image->descriptorSetUpdatePending = 1;
 }
 
 int
@@ -234,9 +235,16 @@ an_image_update_fft (struct an_image    *image,
     struct an_gpu_context *ctx = image->ctx;
     struct pipeline *updPipeline = ctx->pipelines[PIPELINE_CFUPDATE];
 
+    if (image->descriptorSetUpdatePending) {
+        image->descriptorSetUpdatePending = 0;
+        update_descriptors (image);
+    }
+
     VkCommandBufferBeginInfo beginInfo;
     ZERO(beginInfo);
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
     vkBeginCommandBuffer (image->commandBuffer, &beginInfo);
     vkCmdBindPipeline (image->commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE,
                        updPipeline->pipeline);
@@ -259,7 +267,10 @@ an_image_update_fft (struct an_image    *image,
     vkQueueWaitIdle(ctx->queue);
 
     /* End */
-    image->inputMemory = image->outputMemory;
+    if (image->inputMemory != image->outputMemory) {
+        image->inputMemory = image->outputMemory;
+        image->descriptorSetUpdatePending = 1;
+    }
 
     return 1;
 }
