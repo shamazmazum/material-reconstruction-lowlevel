@@ -1,3 +1,0 @@
-#pragma once
-
-#define SHADER_SOURCE "@CMAKE_INSTALL_PREFIX@/share/annealing-lowlevel/shaders/"
