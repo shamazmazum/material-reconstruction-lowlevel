@@ -6,6 +6,7 @@ configure_file(
 add_library (annealing-lowlevel SHARED
   fft.c
   context.c
+  buffer.c
   annealing-lowlevel.c)
 
 target_link_libraries (annealing-lowlevel m ${FFTW3_LIBRARY} Vulkan::Vulkan)

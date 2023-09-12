@@ -5,6 +5,8 @@
 
 extern const unsigned int update_group_sizes[];
 
+/* Pipelines */
+
 enum pipeline_type {
     PIPELINE_CFUPDATE = 0,
     PIPELINE_METRIC,
@@ -34,3 +36,25 @@ struct an_gpu_context {
 
     struct pipeline *pipelines[PIPELINE_COUNT];
 };
+
+/* Buffers */
+
+struct an_image_memory {
+    VkBuffer buffer;
+    VkDeviceMemory memory;
+};
+
+struct an_image_memory*
+an_create_buffer (struct an_gpu_context *ctx, VkBufferUsageFlags usage,
+                  VkMemoryPropertyFlags properties, size_t size);
+
+void
+an_destroy_buffer (struct an_gpu_context *ctx, struct an_image_memory *imemory);
+
+int
+an_write_data (struct an_gpu_context *ctx, struct an_image_memory *imageMemory,
+               const void *data, size_t size);
+
+int
+an_read_data (struct an_gpu_context *ctx, struct an_image_memory *imageMemory,
+              void *data, size_t size);

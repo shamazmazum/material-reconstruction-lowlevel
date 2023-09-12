@@ -29,11 +29,6 @@ enum image_type {
     IMAGE_COMPLEX
 };
 
-struct image_memory {
-    VkBuffer buffer;
-    VkDeviceMemory memory;
-};
-
 struct an_image {
     enum image_type type;
     struct an_gpu_context *ctx;
@@ -43,211 +38,12 @@ struct an_image {
     size_t actual_size;
     uint32_t ngroups[MAX_DIMENSIONS];
 
-    struct image_memory *metricMemory;
-    struct image_memory *inputMemory;
-    struct image_memory *outputMemory;
+    struct an_image_memory *metricMemory;
+    struct an_image_memory *inputMemory;
+    struct an_image_memory *outputMemory;
     /* Not a separate buffer, just switches between other two */
-    struct image_memory *savedMemory;
+    struct an_image_memory *savedMemory;
 };
-
-static void
-free_image_memory (VkDevice device, struct image_memory *imemory) {
-    if (imemory->memory != VK_NULL_HANDLE) {
-        vkFreeMemory (device, imemory->memory, NULL);
-    }
-
-    if (imemory->buffer != VK_NULL_HANDLE) {
-        vkDestroyBuffer (device, imemory->buffer, NULL);
-    }
-}
-
-static struct image_memory*
-create_buffer (VkPhysicalDevice physicalDevice, VkDevice device,
-               VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
-               size_t size) {
-    VkResult result;
-    int i;
-
-    struct image_memory *imemory = malloc (sizeof (struct image_memory));
-    memset (imemory, 0, sizeof (struct image_memory));
-    
-    VkBufferCreateInfo bufferInfo;
-    ZERO(bufferInfo);
-    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.size = size;
-    bufferInfo.usage = usage;
-    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-    result = vkCreateBuffer(device, &bufferInfo, NULL, &imemory->buffer);
-    if (result != VK_SUCCESS) {
-        fprintf (stderr, "Cannot create buffer, code = %i\n", result);
-        goto cleanup;
-    }
-
-    VkPhysicalDeviceMemoryProperties memProperties;
-    vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
-    VkMemoryRequirements memRequirements;
-    vkGetBufferMemoryRequirements(device, imemory->buffer, &memRequirements);
-
-    for (i = 0; i < memProperties.memoryTypeCount; i++) {
-        if ((memRequirements.memoryTypeBits & (1 << i)) &&
-            (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
-            break;
-        }
-    }
-
-    if (i == memProperties.memoryTypeCount) {
-        fprintf (stderr, "Cannot find memory with needed requirements\n");
-        goto cleanup;
-    }
-
-    VkMemoryAllocateInfo allocInfo;
-    ZERO(allocInfo);
-    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocInfo.allocationSize = memRequirements.size;
-    allocInfo.memoryTypeIndex = i;
-
-    result = vkAllocateMemory(device, &allocInfo, NULL, &imemory->memory);
-    if (result != VK_SUCCESS) {
-        fprintf (stderr, "Cannot allocate buffer memory, code = %i\n", result);
-        goto cleanup;
-    }
-
-    vkBindBufferMemory (device, imemory->buffer, imemory->memory, 0);
-    return imemory;
-
-cleanup:
-    free_image_memory (device, imemory);
-    return NULL;
-}
-
-static int
-copy_buffer (struct an_gpu_context *ctx, VkBuffer source, VkBuffer destination,
-             VkDeviceSize size) {
-    VkResult result;
-    VkCommandBufferAllocateInfo allocInfo;
-    ZERO(allocInfo);
-    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    allocInfo.commandPool = ctx->cmdPool;
-    allocInfo.commandBufferCount = 1;
-
-    VkCommandBuffer commandBuffer;
-    result = vkAllocateCommandBuffers(ctx->device, &allocInfo, &commandBuffer);
-    if (result != VK_SUCCESS) {
-        return 0;
-    }
-
-    VkCommandBufferBeginInfo beginInfo;
-    ZERO(beginInfo);
-    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
-    vkBeginCommandBuffer(commandBuffer, &beginInfo);
-    VkBufferCopy copyRegion;
-    ZERO(copyRegion);
-    copyRegion.srcOffset = 0; // Optional
-    copyRegion.dstOffset = 0; // Optional
-    copyRegion.size = size;
-    vkCmdCopyBuffer(commandBuffer, source, destination, 1, &copyRegion);
-    vkEndCommandBuffer (commandBuffer);
-
-    VkSubmitInfo submitInfo;
-    ZERO(submitInfo);
-    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &commandBuffer;
-
-    vkQueueSubmit(ctx->queue, 1, &submitInfo, VK_NULL_HANDLE);
-    vkQueueWaitIdle(ctx->queue);
-    vkFreeCommandBuffers(ctx->device, ctx->cmdPool, 1, &commandBuffer);
-
-    return 1;
-}
-
-static int
-write_data (struct an_gpu_context *ctx, struct image_memory *imageMemory,
-            const void *data, size_t size) {
-    int code = 1;
-    void *ptr;
-    VkResult result;
-
-    struct image_memory *tmp = create_buffer (ctx->physDev, ctx->device,
-                                              VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                                              VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                              VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                                              size);
-    if (tmp == NULL) {
-        fprintf (stderr, "Cannot create staging buffer\n");
-        code = 0;
-        goto cleanup;
-    }
-
-    result = vkMapMemory (ctx->device, tmp->memory, 0, size, 0, &ptr);
-    if (result != VK_SUCCESS) {
-        fprintf (stderr, "Cannot map memory\n");
-        code = 0;
-        goto cleanup;
-    }
-
-    memcpy(ptr, data, size);
-    vkUnmapMemory (ctx->device, tmp->memory);
-
-    if (!copy_buffer (ctx, tmp->buffer, imageMemory->buffer, size)) {
-        fprintf (stderr, "Cannot copy data from staging buffer\n");
-        code = 0;
-        goto cleanup;
-    }
-
-cleanup:
-    if (tmp != NULL) {
-        free_image_memory (ctx->device, tmp);
-    }
-
-    return code;
-}
-
-static int
-read_data (struct an_gpu_context *ctx, struct image_memory *imageMemory,
-           void *data, size_t size) {
-    int code = 1;
-    void *ptr;
-    VkResult result;
-
-    struct image_memory *tmp = create_buffer (ctx->physDev, ctx->device,
-                                              VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                                              VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                              VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                                              size);
-    if (tmp == NULL) {
-        fprintf (stderr, "Cannot create staging buffer\n");
-        code = 0;
-        goto cleanup;
-    }
-
-    if (!copy_buffer (ctx, imageMemory->buffer, tmp->buffer, size)) {
-        fprintf (stderr, "Cannot copy data to staging buffer\n");
-        code = 0;
-        goto cleanup;
-    }
-
-    result = vkMapMemory (ctx->device, tmp->memory, 0, size, 0, &ptr);
-    if (result != VK_SUCCESS) {
-        fprintf (stderr, "Cannot map memory\n");
-        code = 0;
-        goto cleanup;
-    }
-
-    memcpy(data, ptr, size);
-    vkUnmapMemory (ctx->device, tmp->memory);
-
-cleanup:
-    if (tmp != NULL) {
-        free_image_memory (ctx->device, tmp);
-    }
-
-    return code;
-}
 
 static int
 create_command_buffer (VkDevice device, VkCommandPool pool, VkCommandBuffer *buffer) {
@@ -278,15 +74,15 @@ an_destroy_image (struct an_image *image) {
     }
 
     if (image->metricMemory != NULL) {
-        free_image_memory (ctx->device, image->metricMemory);
+        an_destroy_buffer (ctx, image->metricMemory);
     }
 
     if (image->savedMemory != NULL) {
-        free_image_memory (ctx->device, image->savedMemory);
+        an_destroy_buffer (ctx, image->savedMemory);
     }
 
     if (image->outputMemory != NULL) {
-        free_image_memory (ctx->device, image->outputMemory);
+        an_destroy_buffer (ctx, image->outputMemory);
     }
         
     free (image);
@@ -332,23 +128,23 @@ an_create_image (struct an_gpu_context *ctx,
     }
 
     printf ("Actual buffer size: %lu\n", image->actual_size * sizeof (mycomplex));
-    image->inputMemory = create_buffer (ctx->physDev, ctx->device,
-                                        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-                                        VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-                                        VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                                        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                                        image->actual_size * sizeof(mycomplex));
+    image->inputMemory =
+        an_create_buffer (ctx, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                          VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+                          VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                          image->actual_size * sizeof(mycomplex));
     if (image->inputMemory == NULL) {
         fprintf (stderr, "Cannot create input buffer\n");
         goto cleanup;
     }
 
-    image->outputMemory = create_buffer (ctx->physDev, ctx->device,
-                                         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-                                         VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-                                         VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                                         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                                         image->actual_size * sizeof(mycomplex));
+    image->outputMemory =
+        an_create_buffer (ctx, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                          VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+                          VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                          image->actual_size * sizeof(mycomplex));
     if (image->outputMemory == NULL) {
         fprintf (stderr, "Cannot create output buffer\n");
         goto cleanup;
@@ -360,14 +156,14 @@ an_create_image (struct an_gpu_context *ctx,
         data[i].im = imag[i];
     }
 
-    if (!write_data (ctx, image->inputMemory, data,
-                     sizeof (mycomplex) * image->actual_size)) {
+    if (!an_write_data (ctx, image->inputMemory, data,
+                        sizeof (mycomplex) * image->actual_size)) {
         fprintf (stderr, "Cannot write data to image memory\n");
         goto cleanup;
     }
 
-    if (!write_data (ctx, image->outputMemory, data,
-                     sizeof (mycomplex) * image->actual_size)) {
+    if (!an_write_data (ctx, image->outputMemory, data,
+                        sizeof (mycomplex) * image->actual_size)) {
         fprintf (stderr, "Cannot write data to image memory\n");
         goto cleanup;
     }
@@ -398,8 +194,8 @@ an_image_get (struct an_image *image,
               float           *real,
               float           *imag) {
     mycomplex *data = malloc (sizeof (mycomplex) * image->actual_size);
-    int res = read_data (image->ctx, image->outputMemory, data,
-                         sizeof (mycomplex) * image->actual_size);
+    int res = an_read_data (image->ctx, image->outputMemory, data,
+                            sizeof (mycomplex) * image->actual_size);
     for (int i = 0; i < image->actual_size; i++) {
         real[i] = data[i].re;
         imag[i] = data[i].im;
@@ -412,7 +208,7 @@ void
 an_image_store_state (struct an_image *image) {
     assert (image->savedMemory != image->outputMemory);
 
-    struct image_memory *tmp = image->savedMemory;
+    struct an_image_memory *tmp = image->savedMemory;
     image->savedMemory  = image->outputMemory;
     image->outputMemory = tmp;
     image->inputMemory  = image->savedMemory;
@@ -422,7 +218,7 @@ void
 an_image_rollback (struct an_image *image) {
     assert (image->savedMemory != image->outputMemory);
 
-    struct image_memory *tmp = image->outputMemory;
+    struct an_image_memory *tmp = image->outputMemory;
     image->inputMemory  = image->savedMemory;
     image->outputMemory = image->savedMemory;
     image->savedMemory  = tmp;
@@ -539,29 +335,29 @@ an_create_corrfn (struct an_gpu_context *ctx,
     printf ("Actual buffer size: %lu\n", image->actual_size * sizeof (mycomplex));
 
     /* Store correlation data here */
-    image->outputMemory = create_buffer (ctx->physDev, ctx->device,
-                                         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-                                         VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                                         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                                         image->actual_size * sizeof(float));
+    image->outputMemory =
+        an_create_buffer (ctx, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                          VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                          image->actual_size * sizeof(float));
     if (image->outputMemory == NULL) {
         fprintf (stderr, "Cannot create output buffer\n");
         goto cleanup;
     }
 
     /* Temporary buffer for metric */
-    image->metricMemory = create_buffer (ctx->physDev, ctx->device,
-                                         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-                                         VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                                         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                                         image->actual_size * sizeof(float));
+    image->metricMemory =
+        an_create_buffer (ctx,VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                          VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                          image->actual_size * sizeof(float));
     if (image->metricMemory == NULL) {
         fprintf (stderr, "Cannot create metric buffer\n");
         goto cleanup;
     }
 
-    if (!write_data (ctx, image->outputMemory, corrfn,
-                     sizeof (float) * image->actual_size)) {
+    if (!an_write_data (ctx, image->outputMemory, corrfn,
+                        sizeof (float) * image->actual_size)) {
         fprintf (stderr, "Cannot write data to image memory\n");
         goto cleanup;
     }
@@ -736,7 +532,7 @@ an_distance (struct an_image *target,
     invoke_reduce_kernel (target);
 
     struct an_gpu_context *ctx = recon->ctx;
-    if (!read_data (ctx, target->metricMemory, distance, sizeof (float))) {
+    if (!an_read_data (ctx, target->metricMemory, distance, sizeof (float))) {
         fprintf (stderr, "Cannot read metric\n");
         return 0;
     }
