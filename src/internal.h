@@ -1,9 +1,24 @@
 #pragma once
 
 #define ZERO(x) memset(&(x), 0, sizeof(x))
-#define DESCRIPTORS_IN_POOL 10
+#define DESCRIPTORS_IN_POOL 15
 
 extern const unsigned int update_group_sizes[];
+
+/* Push constants structures */
+struct CFUpdateData {
+    unsigned int actual_dimensions[MAX_DIMENSIONS + 1];
+    unsigned int logical_dimensions[MAX_DIMENSIONS + 1];
+    unsigned int stride[MAX_DIMENSIONS + 1];
+    unsigned int point[MAX_DIMENSIONS + 1];
+
+    float c;
+    unsigned int ndim;
+};
+
+struct MetricUpdateData {
+    unsigned int length;
+};
 
 /* Pipelines */
 
@@ -19,8 +34,6 @@ struct pipeline {
     VkDescriptorSetLayout descriptorSetLayout;
     VkPipelineLayout pipelineLayout;
     VkPipeline pipeline;
-    /* TODO: Move this to image objects */
-    VkDescriptorSet descriptorSet;
 };
 
 struct an_gpu_context {
@@ -77,11 +90,19 @@ struct an_image {
 
 struct an_corrfn {
     struct an_gpu_context *ctx;
-    VkCommandBuffer commandBuffer;
     size_t actual_size;
-
     struct an_image_memory *corrfnMemory;
+};
+
+struct an_metric {
+    struct an_gpu_context *ctx;
+    VkCommandBuffer commandBuffer;
     struct an_image_memory *metricMemory;
+    VkDescriptorSet metricSet;
+    VkDescriptorSet reduceSet;
+
+    struct an_corrfn *target;
+    struct an_image  *recon;
 };
 
 struct an_image_memory*

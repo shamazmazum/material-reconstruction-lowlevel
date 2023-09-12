@@ -160,10 +160,6 @@ pipeline_cleanup (struct an_gpu_context *ctx, struct pipeline *pipeline) {
         vkDestroyPipeline (ctx->device, pipeline->pipeline, NULL);
     }
 
-    if (pipeline->descriptorSet != VK_NULL_HANDLE) {
-        vkFreeDescriptorSets (ctx->device, ctx->descPool, 1, &pipeline->descriptorSet);
-    }
-
     if (pipeline->pipelineLayout != VK_NULL_HANDLE) {
         vkDestroyPipelineLayout (ctx->device, pipeline->pipelineLayout, NULL);
     }
@@ -196,12 +192,11 @@ an_allocate_descriptor_set (struct an_gpu_context *ctx,
     return vkAllocateDescriptorSets (ctx->device, &allocateInfo, descriptorSet);
 }
 
-/* Create VkPipelineLayout AND VkDescriptorSet */
+/* Create VkPipelineLayout */
 static struct pipeline*
 create_pipeline_layout (struct an_gpu_context *ctx, const char *shaderPath,
                         unsigned int nbuffers, size_t pushConstantsSize) {
-    assert (ctx->device != VK_NULL_HANDLE &&
-            ctx->descPool != VK_NULL_HANDLE);
+    assert (ctx->device != VK_NULL_HANDLE);
 
     VkResult result;
     struct pipeline *pipeline = malloc (sizeof (struct pipeline));
@@ -255,19 +250,6 @@ create_pipeline_layout (struct an_gpu_context *ctx, const char *shaderPath,
     result = vkCreatePipelineLayout (ctx->device, &plInfo, NULL, &pipeline->pipelineLayout);
     if (result != VK_SUCCESS) {
         fprintf (stderr, "Cannot create pipeline layout, code = %i\n", result);
-        goto cleanup;
-    }
-
-    VkDescriptorSetAllocateInfo allocateInfo;
-    ZERO(allocateInfo);
-    allocateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocateInfo.descriptorPool = ctx->descPool;
-    allocateInfo.descriptorSetCount = 1;
-    allocateInfo.pSetLayouts = &pipeline->descriptorSetLayout;
-
-    result = an_allocate_descriptor_set (ctx, pipeline, &pipeline->descriptorSet);
-    if (result != VK_SUCCESS) {
-        fprintf (stderr, "Cannot create descriptor set, code = %i\n", result);
         goto cleanup;
     }
 

@@ -18,20 +18,7 @@ int an_irfft (float              *array,
 struct an_gpu_context;
 struct an_image;
 struct an_corrfn;
-
-struct CFUpdateData {
-    unsigned int actual_dimensions[MAX_DIMENSIONS + 1];
-    unsigned int logical_dimensions[MAX_DIMENSIONS + 1];
-    unsigned int stride[MAX_DIMENSIONS + 1];
-    unsigned int point[MAX_DIMENSIONS + 1];
-
-    float c;
-    unsigned int ndim;
-};
-
-struct MetricUpdateData {
-    unsigned int length;
-};
+struct an_metric;
 
 struct an_gpu_context*
 an_create_context(unsigned int ndim);
@@ -77,7 +64,14 @@ an_image_get (struct an_image *image,
               float           *imag);
 
 /* Distance measurement */
+struct an_metric*
+an_create_metric (struct an_gpu_context *ctx,
+                  struct an_corrfn      *target,
+                  struct an_image       *recon);
+
+void
+an_destroy_metric (struct an_metric *metric);
+
 int
-an_distance (struct an_corrfn *target,
-             struct an_image  *recon,
+an_distance (struct an_metric *metric,
              float            *distance);

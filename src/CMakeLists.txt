@@ -9,6 +9,7 @@ add_library (annealing-lowlevel SHARED
   buffer.c
   images.c
   corrfn.c
+  metric.c
 )
 
 target_link_libraries (annealing-lowlevel m ${FFTW3_LIBRARY} Vulkan::Vulkan)
