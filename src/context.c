@@ -124,7 +124,7 @@ create_pipelines (struct an_gpu_context *ctx) {
     return result;
 }
 
-static int
+static VkResult
 load_shader (VkDevice device, const char *source, VkShaderModule *shaderModule) {
     FILE *stream = fopen (source, "rb");
     if (stream == NULL) {
@@ -147,14 +147,9 @@ load_shader (VkDevice device, const char *source, VkShaderModule *shaderModule) 
     createInfo.codeSize = size;
     createInfo.pCode = code;
 
-    VkResult result;
-    result = vkCreateShaderModule(device, &createInfo, NULL, shaderModule);
-    if (result != VK_SUCCESS) {
-        fprintf (stderr, "Cannot create shader module, code = %i\n", result);
-    }
-
+    VkResult result = vkCreateShaderModule(device, &createInfo, NULL, shaderModule);
     free (code);
-    return result == VK_SUCCESS;
+    return result;
 }
 
 static void
@@ -184,6 +179,23 @@ pipeline_cleanup (struct an_gpu_context *ctx, struct pipeline *pipeline) {
     free (pipeline);
 }
 
+VkResult
+an_allocate_descriptor_set (struct an_gpu_context *ctx,
+                            struct pipeline *pipeline,
+                            VkDescriptorSet *descriptorSet) {
+    assert (ctx->descPool != VK_NULL_HANDLE &&
+            pipeline->descriptorSetLayout != VK_NULL_HANDLE);
+
+    VkDescriptorSetAllocateInfo allocateInfo;
+    ZERO(allocateInfo);
+    allocateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocateInfo.descriptorPool = ctx->descPool;
+    allocateInfo.descriptorSetCount = 1;
+    allocateInfo.pSetLayouts = &pipeline->descriptorSetLayout;
+
+    return vkAllocateDescriptorSets (ctx->device, &allocateInfo, descriptorSet);
+}
+
 /* Create VkPipelineLayout AND VkDescriptorSet */
 static struct pipeline*
 create_pipeline_layout (struct an_gpu_context *ctx, const char *shaderPath,
@@ -196,7 +208,9 @@ create_pipeline_layout (struct an_gpu_context *ctx, const char *shaderPath,
     memset (pipeline, 0, sizeof (struct pipeline));
     VkDescriptorSetLayoutBinding *bindings;
 
-    if (!load_shader (ctx->device, shaderPath, &pipeline->shader)) {
+    result = load_shader (ctx->device, shaderPath, &pipeline->shader);
+    if (result != VK_SUCCESS) {
+        fprintf (stderr, "Cannot create shader module, code = %i\n", result);
         goto cleanup;
     }
 
@@ -251,9 +265,10 @@ create_pipeline_layout (struct an_gpu_context *ctx, const char *shaderPath,
     allocateInfo.descriptorSetCount = 1;
     allocateInfo.pSetLayouts = &pipeline->descriptorSetLayout;
 
-    result = vkAllocateDescriptorSets (ctx->device, &allocateInfo, &pipeline->descriptorSet);
+    result = an_allocate_descriptor_set (ctx, pipeline, &pipeline->descriptorSet);
     if (result != VK_SUCCESS) {
         fprintf (stderr, "Cannot create descriptor set, code = %i\n", result);
+        goto cleanup;
     }
 
     return pipeline;
@@ -522,7 +537,7 @@ void an_destroy_context (struct an_gpu_context *ctx) {
     free (ctx);
 }
 
-int
+VkResult
 an_create_command_buffer (struct an_gpu_context *ctx, VkCommandBuffer *buffer) {
     assert (ctx->device != VK_NULL_HANDLE && ctx->cmdPool != VK_NULL_HANDLE);
 
@@ -534,10 +549,5 @@ an_create_command_buffer (struct an_gpu_context *ctx, VkCommandBuffer *buffer) {
     cbAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     cbAllocInfo.commandBufferCount = 1;
 
-    result = vkAllocateCommandBuffers (ctx->device, &cbAllocInfo, buffer);
-    if (result != VK_SUCCESS) {
-        fprintf (stderr, "Cannot allocate command buffer, code = %i\n", result);
-    }
-
-    return result == VK_SUCCESS;
+    return vkAllocateCommandBuffers (ctx->device, &cbAllocInfo, buffer);
 }

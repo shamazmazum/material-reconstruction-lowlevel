@@ -9,12 +9,53 @@
 #include "annealing-lowlevel.h"
 #include "internal.h"
 
+static void
+update_descriptors (struct an_image *image) {
+    struct an_gpu_context *ctx = image->ctx;
+
+    VkDescriptorBufferInfo inputInfo;
+    ZERO(inputInfo);
+    inputInfo.buffer = image->inputMemory->buffer;
+    inputInfo.offset = 0;
+    inputInfo.range = sizeof (mycomplex) * image->actual_size;
+
+    VkDescriptorBufferInfo outputInfo;
+    ZERO(outputInfo);
+    outputInfo.buffer = image->outputMemory->buffer;
+    outputInfo.offset = 0;
+    outputInfo.range = sizeof (mycomplex) * image->actual_size;
+
+    VkWriteDescriptorSet dsSets[2];
+    memset (dsSets, 0, sizeof (dsSets));
+    dsSets[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    dsSets[0].dstSet = image->descriptorSet;
+    dsSets[0].dstBinding = 0; // binding #
+    dsSets[0].dstArrayElement = 0;
+    dsSets[0].descriptorCount = 1;
+    dsSets[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    dsSets[0].pBufferInfo = &inputInfo;
+
+    dsSets[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    dsSets[1].dstSet = image->descriptorSet;
+    dsSets[1].dstBinding = 1; // binding #
+    dsSets[1].dstArrayElement = 0;
+    dsSets[1].descriptorCount = 1;
+    dsSets[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    dsSets[1].pBufferInfo = &outputInfo;
+
+    vkUpdateDescriptorSets (ctx->device, 2, dsSets, 0, NULL);
+}
+
 void
 an_destroy_image (struct an_image *image) {
     assert (image->savedMemory != image->outputMemory);
     struct an_gpu_context *ctx = image->ctx;
 
-    if (image->commandBuffer != NULL) {
+    if (image->descriptorSet != VK_NULL_HANDLE) {
+        vkFreeDescriptorSets (ctx->device, ctx->descPool, 1, &image->descriptorSet);
+    }
+
+    if (image->commandBuffer != VK_NULL_HANDLE) {
         vkFreeCommandBuffers (ctx->device, ctx->cmdPool, 1, &image->commandBuffer);
     }
 
@@ -41,7 +82,7 @@ an_create_image (struct an_gpu_context *ctx,
     }
 
     mycomplex *data = NULL;
-
+    VkResult result;
     struct an_image *image = malloc (sizeof (struct an_image));
     memset (image, 0, sizeof (struct an_image));
 
@@ -118,9 +159,20 @@ an_create_image (struct an_gpu_context *ctx,
             ceil((double)image->updateData.actual_dimensions[i] / (double) grpSize[i]) : 1;
     }
 
-    if (!an_create_command_buffer (ctx, &image->commandBuffer)) {
+    result = an_create_command_buffer (ctx, &image->commandBuffer);
+    if (result != VK_SUCCESS) {
+        fprintf (stderr, "Cannot allocate command buffer, code = %i\n", result);
         goto cleanup;
     }
+
+    result = an_allocate_descriptor_set (ctx, ctx->pipelines[PIPELINE_CFUPDATE],
+                                         &image->descriptorSet);
+    if (result != VK_SUCCESS) {
+        fprintf (stderr, "Cannot allocate descriptor set, code = %i\n", result);
+        goto cleanup;
+    }
+
+    update_descriptors (image);
 
     image->savedMemory = image->inputMemory;
     return image;
@@ -170,8 +222,6 @@ an_image_update_fft (struct an_image    *image,
                      const unsigned int *coord,
                      unsigned int        ndim,
                      float               delta) {
-    VkResult result;
-
     if (ndim != image->updateData.ndim) {
         fprintf (stderr, "Wrong dimensions\n");
         return 0;
@@ -184,38 +234,6 @@ an_image_update_fft (struct an_image    *image,
     struct an_gpu_context *ctx = image->ctx;
     struct pipeline *updPipeline = ctx->pipelines[PIPELINE_CFUPDATE];
 
-    VkDescriptorBufferInfo inputInfo;
-    ZERO(inputInfo);
-    inputInfo.buffer = image->inputMemory->buffer;
-    inputInfo.offset = 0;
-    inputInfo.range = sizeof (mycomplex) * image->actual_size;
-
-    VkDescriptorBufferInfo outputInfo;
-    ZERO(outputInfo);
-    outputInfo.buffer = image->outputMemory->buffer;
-    outputInfo.offset = 0;
-    outputInfo.range = sizeof (mycomplex) * image->actual_size;
-
-    VkWriteDescriptorSet dsSets[2];
-    memset (dsSets, 0, sizeof (dsSets));
-    dsSets[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    dsSets[0].dstSet = updPipeline->descriptorSet;
-    dsSets[0].dstBinding = 0; // binding #
-    dsSets[0].dstArrayElement = 0;
-    dsSets[0].descriptorCount = 1;
-    dsSets[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    dsSets[0].pBufferInfo = &inputInfo;
-
-    dsSets[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    dsSets[1].dstSet = updPipeline->descriptorSet;
-    dsSets[1].dstBinding = 1; // binding #
-    dsSets[1].dstArrayElement = 0;
-    dsSets[1].descriptorCount = 1;
-    dsSets[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    dsSets[1].pBufferInfo = &outputInfo;
-
-    vkUpdateDescriptorSets (ctx->device, 2, dsSets, 0, NULL);
-
     VkCommandBufferBeginInfo beginInfo;
     ZERO(beginInfo);
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -224,7 +242,7 @@ an_image_update_fft (struct an_image    *image,
                        updPipeline->pipeline);
     vkCmdBindDescriptorSets (image->commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE,
                              updPipeline->pipelineLayout,
-                             0, 1, &updPipeline->descriptorSet, 0, NULL);
+                             0, 1, &image->descriptorSet, 0, NULL);
     vkCmdPushConstants (image->commandBuffer, updPipeline->pipelineLayout,
                         VK_SHADER_STAGE_COMPUTE_BIT, 0,
                         sizeof (struct CFUpdateData), &image->updateData);

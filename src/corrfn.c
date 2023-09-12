@@ -78,7 +78,9 @@ an_create_corrfn (struct an_gpu_context *ctx,
         goto cleanup;
     }
 
-    if (!an_create_command_buffer (ctx, &image->commandBuffer)) {
+    VkResult result = an_create_command_buffer (ctx, &image->commandBuffer);
+    if (result != VK_SUCCESS) {
+        fprintf (stderr, "Cannot allocate command buffer, code = %i\n", result);
         goto cleanup;
     }
 

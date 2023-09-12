@@ -37,8 +37,14 @@ struct an_gpu_context {
     struct pipeline *pipelines[PIPELINE_COUNT];
 };
 
+/* Descriptor sets */
+VkResult
+an_allocate_descriptor_set (struct an_gpu_context *ctx,
+                            struct pipeline *pipeline,
+                            VkDescriptorSet *descriptorSet);
+
 /* Command buffers */
-int
+VkResult
 an_create_command_buffer (struct an_gpu_context *ctx, VkCommandBuffer *buffer);
 
 /* Memory buffers */
@@ -57,6 +63,7 @@ typedef union
 struct an_image {
     struct an_gpu_context *ctx;
     VkCommandBuffer commandBuffer;
+    VkDescriptorSet descriptorSet;
 
     struct CFUpdateData updateData;
     size_t actual_size;
