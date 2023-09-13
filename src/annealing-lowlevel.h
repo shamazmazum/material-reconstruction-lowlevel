@@ -21,7 +21,7 @@ struct an_corrfn;
 struct an_metric;
 
 struct an_gpu_context*
-an_create_context(unsigned int ndim);
+an_create_context(unsigned int ndim, int validation);
 
 void
 an_destroy_context (struct an_gpu_context *ctx);

@@ -17,7 +17,6 @@ const unsigned int update_group_sizes[] = {
 };
 
 const char *validationLayer = "VK_LAYER_KHRONOS_validation";
-const int enableValidation = 1;
 
 static int
 hasValidationLayer () {
@@ -341,7 +340,7 @@ find_device (struct an_gpu_context *ctx) {
 }
 
 static VkResult
-create_instance (struct an_gpu_context *ctx) {
+create_instance (struct an_gpu_context *ctx, int enableValidation) {
     int validation = hasValidationLayer () && enableValidation;
     if (validation) {
         printf ("Enabling validation layer\n");
@@ -401,7 +400,7 @@ create_pipeline_cache (struct an_gpu_context *ctx) {
     return vkCreatePipelineCache (ctx->device, &cacheInfo, NULL, &ctx->cache);
 }
 
-struct an_gpu_context* an_create_context(unsigned int ndim) {
+struct an_gpu_context* an_create_context(unsigned int ndim, int validation) {
     VkResult result;
     struct an_gpu_context *ctx = malloc (sizeof (struct an_gpu_context));
     memset (ctx, 0, sizeof (struct an_gpu_context));
@@ -409,7 +408,7 @@ struct an_gpu_context* an_create_context(unsigned int ndim) {
     ctx->ndim = ndim;
 
     /* Create an instance */
-    result = create_instance (ctx);
+    result = create_instance (ctx, validation);
     if (result != VK_SUCCESS) {
         fprintf (stderr, "Cannot create vulkan instance, code = %i\n", result);
         goto cleanup;
