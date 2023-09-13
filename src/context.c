@@ -191,6 +191,15 @@ an_allocate_descriptor_set (struct an_gpu_context *ctx,
     return vkAllocateDescriptorSets (ctx->device, &allocateInfo, descriptorSet);
 }
 
+VkResult
+an_create_fence (struct an_gpu_context *ctx, VkFence *fence) {
+    VkFenceCreateInfo info;
+    ZERO (info);
+    info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+
+    return vkCreateFence (ctx->device, &info, NULL, fence);
+}
+
 /* Create VkPipelineLayout */
 static struct pipeline*
 create_pipeline_layout (struct an_gpu_context *ctx, const char *shaderPath,

@@ -232,6 +232,7 @@ cleanup:
 static void
 invoke_kernels (struct an_metric *metric) {
     struct an_gpu_context *ctx = metric->ctx;
+    an_image_synchronize (metric->recon);
 
     VkSubmitInfo submitInfo;
     ZERO(submitInfo);

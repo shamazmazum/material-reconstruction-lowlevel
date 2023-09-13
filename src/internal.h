@@ -50,6 +50,13 @@ struct an_gpu_context {
     struct pipeline *pipelines[PIPELINE_COUNT];
 };
 
+/* Fences */
+VkResult
+an_create_fence (struct an_gpu_context *ctx, VkFence *fence);
+
+void
+an_image_synchronize (struct an_image *image);
+
 /* Descriptor sets */
 VkResult
 an_allocate_descriptor_set (struct an_gpu_context *ctx,
@@ -77,6 +84,8 @@ struct an_image {
     struct an_gpu_context *ctx;
     VkCommandBuffer commandBuffer;
     VkDescriptorSet descriptorSet;
+    VkFence fence;
+    int computationLaunched;
 
     struct CFUpdateData updateData;
     size_t actual_size;
@@ -101,6 +110,8 @@ struct an_metric {
     struct an_corrfn *target;
     struct an_image  *recon;
 };
+
+/* Buffer management */
 
 struct an_image_memory*
 an_create_buffer (struct an_gpu_context *ctx, VkBufferUsageFlags usage,

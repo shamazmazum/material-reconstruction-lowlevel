@@ -33,8 +33,24 @@ update_descriptors (struct an_image *image) {
 }
 
 void
+an_image_synchronize (struct an_image *image) {
+    struct an_gpu_context *ctx = image->ctx;
+
+    if (image->computationLaunched) {
+        image->computationLaunched = 0;
+
+        vkWaitForFences (ctx->device, 1, &image->fence, VK_TRUE, -1);
+        vkResetFences (ctx->device, 1, &image->fence);
+    }
+}
+
+void
 an_destroy_image (struct an_image *image) {
     struct an_gpu_context *ctx = image->ctx;
+
+    if (image->fence != VK_NULL_HANDLE) {
+        vkDestroyFence (ctx->device, image->fence, NULL);
+    }
 
     if (image->descriptorSet != VK_NULL_HANDLE) {
         vkFreeDescriptorSets (ctx->device, ctx->descPool, 1, &image->descriptorSet);
@@ -134,6 +150,12 @@ an_create_image (struct an_gpu_context *ctx,
         goto cleanup;
     }
 
+    result = an_create_fence (ctx, &image->fence);
+    if (result != VK_SUCCESS) {
+        fprintf (stderr, "Cannot create a fence, code = %i\n", result);
+        goto cleanup;
+    }
+
     update_descriptors (image);
     return image;
 
@@ -146,8 +168,11 @@ int
 an_image_get (struct an_image *image,
               float           *real,
               float           *imag) {
+    struct an_gpu_context *ctx = image->ctx;
+
+    an_image_synchronize (image);
     mycomplex *data = malloc (sizeof (mycomplex) * image->actual_size);
-    int res = an_read_data (image->ctx, image->imageMemory, data,
+    int res = an_read_data (ctx, image->imageMemory, data,
                             sizeof (mycomplex) * image->actual_size);
     for (int i = 0; i < image->actual_size; i++) {
         real[i] = data[i].re;
@@ -178,6 +203,7 @@ an_image_update_fft (struct an_image    *image,
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
+    an_image_synchronize (image);
     vkBeginCommandBuffer (image->commandBuffer, &beginInfo);
     vkCmdBindPipeline (image->commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE,
                        updPipeline->pipeline);
@@ -196,8 +222,8 @@ an_image_update_fft (struct an_image    *image,
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &image->commandBuffer;
-    vkQueueSubmit (ctx->queue, 1, &submitInfo, VK_NULL_HANDLE);
-    vkQueueWaitIdle(ctx->queue);
+    vkQueueSubmit (ctx->queue, 1, &submitInfo, image->fence);
+    image->computationLaunched = 1;
 
     return 1;
 }
