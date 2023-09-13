@@ -18,6 +18,10 @@ target_include_directories(annealing-lowlevel PUBLIC
   ${Vulkan_INCLUDE_DIR}
   ${CMAKE_CURRENT_BINARY_DIR}
 )
+
 add_dependencies(annealing-lowlevel update-shader reduce-shader metric-shader)
+set_target_properties (annealing-lowlevel PROPERTIES VERSION ${annealing-lowlevel_VERSION}
+  SOVERSION ${annealing-lowlevel_VERSION_MAJOR}
+  C_VISIBILITY_PRESET hidden)
 
 install (TARGETS annealing-lowlevel LIBRARY DESTINATION lib)

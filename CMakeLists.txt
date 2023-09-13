@@ -1,7 +1,7 @@
 cmake_minimum_required (VERSION 3.0)
 cmake_policy(SET CMP0048 NEW)
 
-project (voxcube VERSION 0.1)
+project (annealing-lowlevel VERSION 0.1)
 set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/Modules")
 
 find_package (Vulkan REQUIRED)
