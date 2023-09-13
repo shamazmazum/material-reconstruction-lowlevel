@@ -45,12 +45,6 @@ an_create_corrfn (struct an_gpu_context *ctx,
 void
 an_destroy_corrfn (struct an_corrfn *corrfn);
 
-void
-an_image_store_state (struct an_image *image);
-
-void
-an_image_rollback (struct an_image *image);
-
 int
 an_image_update_fft (struct an_image    *image,
                      const unsigned int *coord,

@@ -81,12 +81,8 @@ struct an_image {
     struct CFUpdateData updateData;
     size_t actual_size;
     uint32_t ngroups[MAX_DIMENSIONS];
-    uint32_t descriptorSetUpdatePending;
 
-    struct an_image_memory *inputMemory;
-    struct an_image_memory *outputMemory;
-    /* Not a separate buffer, just switches between other two */
-    struct an_image_memory *savedMemory;
+    struct an_image_memory *imageMemory;
 };
 
 struct an_corrfn {

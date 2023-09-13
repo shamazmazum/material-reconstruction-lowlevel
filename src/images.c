@@ -13,42 +13,27 @@ static void
 update_descriptors (struct an_image *image) {
     struct an_gpu_context *ctx = image->ctx;
 
-    VkDescriptorBufferInfo inputInfo;
-    ZERO(inputInfo);
-    inputInfo.buffer = image->inputMemory->buffer;
-    inputInfo.offset = 0;
-    inputInfo.range = sizeof (mycomplex) * image->actual_size;
+    VkDescriptorBufferInfo memoryInfo;
+    ZERO(memoryInfo);
+    memoryInfo.buffer = image->imageMemory->buffer;
+    memoryInfo.offset = 0;
+    memoryInfo.range = sizeof (mycomplex) * image->actual_size;
 
-    VkDescriptorBufferInfo outputInfo;
-    ZERO(outputInfo);
-    outputInfo.buffer = image->outputMemory->buffer;
-    outputInfo.offset = 0;
-    outputInfo.range = sizeof (mycomplex) * image->actual_size;
+    VkWriteDescriptorSet dsSet;
+    ZERO (dsSet);
+    dsSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    dsSet.dstSet = image->descriptorSet;
+    dsSet.dstBinding = 0; // binding #
+    dsSet.dstArrayElement = 0;
+    dsSet.descriptorCount = 1;
+    dsSet.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    dsSet.pBufferInfo = &memoryInfo;
 
-    VkWriteDescriptorSet dsSets[2];
-    memset (dsSets, 0, sizeof (dsSets));
-    dsSets[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    dsSets[0].dstSet = image->descriptorSet;
-    dsSets[0].dstBinding = 0; // binding #
-    dsSets[0].dstArrayElement = 0;
-    dsSets[0].descriptorCount = 1;
-    dsSets[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    dsSets[0].pBufferInfo = &inputInfo;
-
-    dsSets[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    dsSets[1].dstSet = image->descriptorSet;
-    dsSets[1].dstBinding = 1; // binding #
-    dsSets[1].dstArrayElement = 0;
-    dsSets[1].descriptorCount = 1;
-    dsSets[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    dsSets[1].pBufferInfo = &outputInfo;
-
-    vkUpdateDescriptorSets (ctx->device, 2, dsSets, 0, NULL);
+    vkUpdateDescriptorSets (ctx->device, 1, &dsSet, 0, NULL);
 }
 
 void
 an_destroy_image (struct an_image *image) {
-    assert (image->savedMemory != image->outputMemory);
     struct an_gpu_context *ctx = image->ctx;
 
     if (image->descriptorSet != VK_NULL_HANDLE) {
@@ -59,12 +44,8 @@ an_destroy_image (struct an_image *image) {
         vkFreeCommandBuffers (ctx->device, ctx->cmdPool, 1, &image->commandBuffer);
     }
 
-    if (image->savedMemory != NULL) {
-        an_destroy_buffer (ctx, image->savedMemory);
-    }
-
-    if (image->outputMemory != NULL) {
-        an_destroy_buffer (ctx, image->outputMemory);
+    if (image->imageMemory != NULL) {
+        an_destroy_buffer (ctx, image->imageMemory);
     }
         
     free (image);
@@ -108,25 +89,14 @@ an_create_image (struct an_gpu_context *ctx,
         image->actual_size *= image->updateData.actual_dimensions[i];
     }
 
-    image->inputMemory =
+    image->imageMemory =
         an_create_buffer (ctx, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
                           VK_BUFFER_USAGE_TRANSFER_DST_BIT |
                           VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                           VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                           image->actual_size * sizeof(mycomplex));
-    if (image->inputMemory == NULL) {
+    if (image->imageMemory == NULL) {
         fprintf (stderr, "Cannot create input buffer\n");
-        goto cleanup;
-    }
-
-    image->outputMemory =
-        an_create_buffer (ctx, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-                          VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-                          VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                          image->actual_size * sizeof(mycomplex));
-    if (image->outputMemory == NULL) {
-        fprintf (stderr, "Cannot create output buffer\n");
         goto cleanup;
     }
 
@@ -136,20 +106,12 @@ an_create_image (struct an_gpu_context *ctx,
         data[i].im = imag[i];
     }
 
-    if (!an_write_data (ctx, image->inputMemory, data,
+    if (!an_write_data (ctx, image->imageMemory, data,
                         sizeof (mycomplex) * image->actual_size)) {
         fprintf (stderr, "Cannot write data to image memory\n");
         free (data);
         goto cleanup;
     }
-
-    if (!an_write_data (ctx, image->outputMemory, data,
-                        sizeof (mycomplex) * image->actual_size)) {
-        fprintf (stderr, "Cannot write data to image memory\n");
-        free (data);
-        goto cleanup;
-    }
-
     free (data);
 
     /* Number of work groups */
@@ -172,7 +134,6 @@ an_create_image (struct an_gpu_context *ctx,
         goto cleanup;
     }
 
-    image->savedMemory = image->inputMemory;
     update_descriptors (image);
     return image;
 
@@ -186,7 +147,7 @@ an_image_get (struct an_image *image,
               float           *real,
               float           *imag) {
     mycomplex *data = malloc (sizeof (mycomplex) * image->actual_size);
-    int res = an_read_data (image->ctx, image->outputMemory, data,
+    int res = an_read_data (image->ctx, image->imageMemory, data,
                             sizeof (mycomplex) * image->actual_size);
     for (int i = 0; i < image->actual_size; i++) {
         real[i] = data[i].re;
@@ -194,28 +155,6 @@ an_image_get (struct an_image *image,
     }
     free (data);
     return res;
-}
-
-void
-an_image_store_state (struct an_image *image) {
-    assert (image->savedMemory != image->outputMemory);
-
-    struct an_image_memory *tmp = image->savedMemory;
-    image->savedMemory  = image->outputMemory;
-    image->outputMemory = tmp;
-    image->inputMemory  = image->savedMemory;
-    image->descriptorSetUpdatePending = 1;
-}
-
-void
-an_image_rollback (struct an_image *image) {
-    assert (image->savedMemory != image->outputMemory);
-
-    struct an_image_memory *tmp = image->outputMemory;
-    image->inputMemory  = image->savedMemory;
-    image->outputMemory = image->savedMemory;
-    image->savedMemory  = tmp;
-    image->descriptorSetUpdatePending = 1;
 }
 
 int
@@ -228,17 +167,11 @@ an_image_update_fft (struct an_image    *image,
         return 0;
     }
 
-    assert (image->savedMemory != image->outputMemory);
     memcpy(image->updateData.point, coord, sizeof (unsigned int) * ndim);
     image->updateData.c = delta;
 
     struct an_gpu_context *ctx = image->ctx;
     struct pipeline *updPipeline = ctx->pipelines[PIPELINE_CFUPDATE];
-
-    if (image->descriptorSetUpdatePending) {
-        image->descriptorSetUpdatePending = 0;
-        update_descriptors (image);
-    }
 
     VkCommandBufferBeginInfo beginInfo;
     ZERO(beginInfo);
@@ -265,12 +198,6 @@ an_image_update_fft (struct an_image    *image,
     submitInfo.pCommandBuffers = &image->commandBuffer;
     vkQueueSubmit (ctx->queue, 1, &submitInfo, VK_NULL_HANDLE);
     vkQueueWaitIdle(ctx->queue);
-
-    /* End */
-    if (image->inputMemory != image->outputMemory) {
-        image->inputMemory = image->outputMemory;
-        image->descriptorSetUpdatePending = 1;
-    }
 
     return 1;
 }

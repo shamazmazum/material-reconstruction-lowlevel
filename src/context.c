@@ -263,7 +263,7 @@ static int
 create_cfupdate_pipeline (struct an_gpu_context *ctx) {
     ctx->pipelines[PIPELINE_CFUPDATE] =
         create_pipeline_layout (ctx, SHADER_SOURCE "update-s2.spv",
-                                2, sizeof (struct CFUpdateData));
+                                1, sizeof (struct CFUpdateData));
     return ctx->pipelines[PIPELINE_CFUPDATE] != NULL;
 }
 

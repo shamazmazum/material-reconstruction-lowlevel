@@ -5,11 +5,7 @@
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 layout(std430, binding = 0) buffer lay0 {
-    vec2 ainput[];
-};
-
-layout(std430, binding = 1) buffer lay1 {
-    vec2 aoutput[];
+    vec2 memory[];
 };
 
 /* Rank in always 3. Unused dimensions must be equal to 1 */
@@ -41,6 +37,6 @@ void main() {
     }
 
     angle = 2 * M_PI * angle;
-    aoutput[idx].x = ainput[idx].x + updateData.c * cos(angle);
-    aoutput[idx].y = ainput[idx].y - updateData.c * sin(angle);
+    memory[idx].x += updateData.c * cos(angle);
+    memory[idx].y -= updateData.c * sin(angle);
 }
