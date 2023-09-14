@@ -55,16 +55,18 @@ static VkResult
 create_descriptor_pool (struct an_gpu_context *ctx) {
     assert (ctx->device != VK_NULL_HANDLE);
 
-    VkDescriptorPoolSize poolSize;
-    ZERO(poolSize);
-    poolSize.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    poolSize.descriptorCount = DESCRIPTORS_IN_POOL;
+    VkDescriptorPoolSize poolSizes[2];
+    memset (poolSizes, 0, sizeof (poolSizes));
+    poolSizes[0].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    poolSizes[0].descriptorCount = DESCRIPTORS_IN_POOL;
+    poolSizes[1].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    poolSizes[1].descriptorCount = DESCRIPTORS_IN_POOL;
 
     VkDescriptorPoolCreateInfo poolInfo;
     ZERO(poolInfo);
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.poolSizeCount = 1;
-    poolInfo.pPoolSizes = &poolSize;
+    poolInfo.poolSizeCount = 2;
+    poolInfo.pPoolSizes = poolSizes;
     poolInfo.maxSets = DESCRIPTORS_IN_POOL;
     poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
 
@@ -203,13 +205,13 @@ an_create_fence (struct an_gpu_context *ctx, VkFence *fence) {
 /* Create VkPipelineLayout */
 static struct pipeline*
 create_pipeline_layout (struct an_gpu_context *ctx, const char *shaderPath,
-                        unsigned int nbuffers, size_t pushConstantsSize) {
+                        unsigned int storageBuffers, unsigned int uniformBuffers,
+                        size_t pushConstantsSize) {
     assert (ctx->device != VK_NULL_HANDLE);
 
     VkResult result;
     struct pipeline *pipeline = malloc (sizeof (struct pipeline));
     memset (pipeline, 0, sizeof (struct pipeline));
-    VkDescriptorSetLayoutBinding *bindings;
 
     result = load_shader (ctx->device, shaderPath, &pipeline->shader);
     if (result != VK_SUCCESS) {
@@ -217,12 +219,21 @@ create_pipeline_layout (struct an_gpu_context *ctx, const char *shaderPath,
         goto cleanup;
     }
 
+    unsigned int nbuffers = storageBuffers + uniformBuffers;
+    VkDescriptorSetLayoutBinding *bindings;
     bindings = malloc (nbuffers * sizeof (VkDescriptorSetLayoutBinding));
     memset (bindings, 0, nbuffers * sizeof (VkDescriptorSetLayoutBinding));
 
-    for (int i = 0; i < nbuffers; i++) {
+    for (int i = 0; i < storageBuffers; i++) {
         bindings[i].binding = i;
         bindings[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        bindings[i].descriptorCount = 1;
+        bindings[i].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    }
+
+    for (int i = storageBuffers; i < nbuffers; i++) {
+        bindings[i].binding = i;
+        bindings[i].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         bindings[i].descriptorCount = 1;
         bindings[i].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
     }
@@ -272,7 +283,7 @@ static int
 create_cfupdate_pipeline (struct an_gpu_context *ctx) {
     ctx->pipelines[PIPELINE_CFUPDATE] =
         create_pipeline_layout (ctx, SHADER_SOURCE "update-s2.spv",
-                                1, sizeof (struct CFUpdateData));
+                                1, 1, sizeof (struct CFUpdateDataConst));
     return ctx->pipelines[PIPELINE_CFUPDATE] != NULL;
 }
 
@@ -280,7 +291,7 @@ static int
 create_metric_pipeline (struct an_gpu_context *ctx) {
     ctx->pipelines[PIPELINE_METRIC] =
         create_pipeline_layout (ctx, SHADER_SOURCE "metric.spv",
-                                3, sizeof (struct MetricUpdateData));
+                                3, 0, sizeof (struct MetricUpdateData));
     return ctx->pipelines[PIPELINE_METRIC] != NULL;
 }
 
@@ -288,7 +299,7 @@ static int
 create_reduce_pipeline (struct an_gpu_context *ctx) {
     ctx->pipelines[PIPELINE_REDUCE] =
         create_pipeline_layout (ctx, SHADER_SOURCE "reduce.spv",
-                                1, sizeof (struct MetricUpdateData));
+                                1, 0, sizeof (struct MetricUpdateData));
     return ctx->pipelines[PIPELINE_REDUCE] != NULL;
 }
 

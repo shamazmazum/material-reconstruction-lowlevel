@@ -6,14 +6,16 @@
 extern const unsigned int update_group_sizes[];
 
 /* Push constants structures */
-struct CFUpdateData {
+struct CFUpdateDataConst {
     unsigned int actual_dimensions[MAX_DIMENSIONS + 1];
     unsigned int logical_dimensions[MAX_DIMENSIONS + 1];
     unsigned int stride[MAX_DIMENSIONS + 1];
-    unsigned int point[MAX_DIMENSIONS + 1];
-
-    float c;
     unsigned int ndim;
+};
+
+struct CFUpdateDataUni {
+    unsigned int point[MAX_DIMENSIONS + 1];
+    float c;
 };
 
 struct MetricUpdateData {
@@ -87,11 +89,13 @@ struct an_image {
     VkFence fence;
     int computationLaunched;
 
-    struct CFUpdateData updateData;
+    struct CFUpdateDataConst updateData;
     size_t actual_size;
     uint32_t ngroups[MAX_DIMENSIONS];
 
     struct an_image_memory *imageMemory;
+    struct an_image_memory *uniformMemory;
+    struct CFUpdateDataUni *uniformPtr;
 };
 
 struct an_corrfn {

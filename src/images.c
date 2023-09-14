@@ -19,17 +19,53 @@ update_descriptors (struct an_image *image) {
     memoryInfo.offset = 0;
     memoryInfo.range = sizeof (mycomplex) * image->actual_size;
 
-    VkWriteDescriptorSet dsSet;
-    ZERO (dsSet);
-    dsSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    dsSet.dstSet = image->descriptorSet;
-    dsSet.dstBinding = 0; // binding #
-    dsSet.dstArrayElement = 0;
-    dsSet.descriptorCount = 1;
-    dsSet.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    dsSet.pBufferInfo = &memoryInfo;
+    VkDescriptorBufferInfo uniInfo;
+    ZERO(uniInfo);
+    uniInfo.buffer = image->uniformMemory->buffer;
+    uniInfo.offset = 0;
+    uniInfo.range = sizeof (struct CFUpdateDataUni);
 
-    vkUpdateDescriptorSets (ctx->device, 1, &dsSet, 0, NULL);
+    VkWriteDescriptorSet dsSets[2];
+    memset (dsSets, 0, sizeof (dsSets));
+    dsSets[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    dsSets[0].dstSet = image->descriptorSet;
+    dsSets[0].dstBinding = 0; // binding #
+    dsSets[0].dstArrayElement = 0;
+    dsSets[0].descriptorCount = 1;
+    dsSets[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    dsSets[0].pBufferInfo = &memoryInfo;
+    dsSets[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    dsSets[1].dstSet = image->descriptorSet;
+    dsSets[1].dstBinding = 1; // binding #
+    dsSets[1].dstArrayElement = 0;
+    dsSets[1].descriptorCount = 1;
+    dsSets[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    dsSets[1].pBufferInfo = &uniInfo;
+
+    vkUpdateDescriptorSets (ctx->device, 2, dsSets, 0, NULL);
+}
+
+static void
+record_command_buffer (struct an_image *image) {
+    struct an_gpu_context *ctx = image->ctx;
+    struct pipeline *updPipeline = ctx->pipelines[PIPELINE_CFUPDATE];
+
+    VkCommandBufferBeginInfo beginInfo;
+    ZERO(beginInfo);
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+
+    vkBeginCommandBuffer (image->commandBuffer, &beginInfo);
+    vkCmdBindPipeline (image->commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE,
+                       updPipeline->pipeline);
+    vkCmdBindDescriptorSets (image->commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE,
+                             updPipeline->pipelineLayout,
+                             0, 1, &image->descriptorSet, 0, NULL);
+    vkCmdPushConstants (image->commandBuffer, updPipeline->pipelineLayout,
+                        VK_SHADER_STAGE_COMPUTE_BIT, 0,
+                        sizeof (struct CFUpdateDataConst), &image->updateData);
+    vkCmdDispatch (image->commandBuffer,
+                   image->ngroups[0], image->ngroups[1], image->ngroups[2]);
+    vkEndCommandBuffer (image->commandBuffer);
 }
 
 void
@@ -58,6 +94,14 @@ an_destroy_image (struct an_image *image) {
 
     if (image->commandBuffer != VK_NULL_HANDLE) {
         vkFreeCommandBuffers (ctx->device, ctx->cmdPool, 1, &image->commandBuffer);
+    }
+
+    if (image->uniformPtr != NULL) {
+        vkUnmapMemory (ctx->device, image->uniformMemory->memory);
+    }
+
+    if (image->uniformMemory != NULL) {
+        an_destroy_buffer (ctx, image->uniformMemory);
     }
 
     if (image->imageMemory != NULL) {
@@ -130,6 +174,25 @@ an_create_image (struct an_gpu_context *ctx,
     }
     free (data);
 
+    image->uniformMemory =
+        an_create_buffer (ctx, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                          VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                          sizeof (struct CFUpdateDataUni));
+    if (image->uniformMemory == NULL) {
+        fprintf (stderr, "Cannot create uniform buffer\n");
+        goto cleanup;
+    }
+
+    void *ptr;
+    result = vkMapMemory (ctx->device, image->uniformMemory->memory, 0,
+                          sizeof (struct CFUpdateDataUni), 0, &ptr);
+    if (result != VK_SUCCESS) {
+        fprintf (stderr, "Cannot map uniform buffer, code = %i\n", result);
+        goto cleanup;
+    }
+    image->uniformPtr = ptr;
+
     /* Number of work groups */
     const unsigned int *grpSize = &update_group_sizes[MAX_DIMENSIONS * (ndim - 1)];
     for (uint32_t i = 0; i < MAX_DIMENSIONS; i++) {
@@ -157,6 +220,7 @@ an_create_image (struct an_gpu_context *ctx,
     }
 
     update_descriptors (image);
+    record_command_buffer (image);
     return image;
 
 cleanup:
@@ -192,30 +256,10 @@ an_image_update_fft (struct an_image    *image,
         return 0;
     }
 
-    memcpy(image->updateData.point, coord, sizeof (unsigned int) * ndim);
-    image->updateData.c = delta;
-
     struct an_gpu_context *ctx = image->ctx;
-    struct pipeline *updPipeline = ctx->pipelines[PIPELINE_CFUPDATE];
-
-    VkCommandBufferBeginInfo beginInfo;
-    ZERO(beginInfo);
-    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
     an_image_synchronize (image);
-    vkBeginCommandBuffer (image->commandBuffer, &beginInfo);
-    vkCmdBindPipeline (image->commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE,
-                       updPipeline->pipeline);
-    vkCmdBindDescriptorSets (image->commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE,
-                             updPipeline->pipelineLayout,
-                             0, 1, &image->descriptorSet, 0, NULL);
-    vkCmdPushConstants (image->commandBuffer, updPipeline->pipelineLayout,
-                        VK_SHADER_STAGE_COMPUTE_BIT, 0,
-                        sizeof (struct CFUpdateData), &image->updateData);
-    vkCmdDispatch (image->commandBuffer,
-                   image->ngroups[0], image->ngroups[1], image->ngroups[2]);
-    vkEndCommandBuffer (image->commandBuffer);
+    memcpy(image->uniformPtr->point, coord, sizeof (unsigned int) * ndim);
+    image->uniformPtr->c = delta;
 
     VkSubmitInfo submitInfo;
     ZERO(submitInfo);

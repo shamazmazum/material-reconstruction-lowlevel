@@ -8,20 +8,26 @@ layout(std430, binding = 0) buffer lay0 {
     vec2 memory[];
 };
 
+layout(binding = 1) uniform UniformBufferObject {
+    uvec3 point;
+
+    uint  unused;
+    float c;
+} uniParams;
+
 /* Rank in always 3. Unused dimensions must be equal to 1 */
 layout(push_constant, std430) uniform Parameters {
     uvec3 actual_dimensions;
     uvec3 logical_dimensions;
     uvec3 stride;
-    uvec3 point;
 
     uint  unused;
-    float c;
     uint  ndim;
 } updateData;
 
 void main() {
     uvec3 gid = gl_GlobalInvocationID;
+
     for (uint i = 0; i < updateData.ndim; i++) {
         if (gid[i] >= updateData.actual_dimensions[i]) {
             return;
@@ -31,12 +37,12 @@ void main() {
     uint idx = 0;
     float angle = 0;
     for (int i = 0; i < updateData.ndim; i++) {
-        angle += float(updateData.point[i]) * float(gid[i]) /
+        angle += float(uniParams.point[i]) * float(gid[i]) /
             float(updateData.logical_dimensions[i]);
         idx += updateData.stride[i] * gid[i];
     }
 
     angle = 2 * M_PI * angle;
-    memory[idx].x += updateData.c * cos(angle);
-    memory[idx].y -= updateData.c * sin(angle);
+    memory[idx].x += uniParams.c * cos(angle);
+    memory[idx].y -= uniParams.c * sin(angle);
 }
