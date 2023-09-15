@@ -299,7 +299,7 @@ static int
 create_reduce_pipeline (struct an_gpu_context *ctx) {
     ctx->pipelines[PIPELINE_REDUCE] =
         create_pipeline_layout (ctx, SHADER_SOURCE "reduce.spv",
-                                1, 0, sizeof (struct MetricUpdateData));
+                                2, 0, sizeof (struct MetricUpdateData));
     return ctx->pipelines[PIPELINE_REDUCE] != NULL;
 }
 

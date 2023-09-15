@@ -108,9 +108,11 @@ struct an_metric {
     struct an_gpu_context *ctx;
     VkCommandBuffer commandBuffer;
     struct an_image_memory *metricMemory;
+    struct an_image_memory *resultMemory;
     VkDescriptorSet metricSet;
     VkDescriptorSet reduceSet;
 
+    float *resultPtr;
     struct an_corrfn *target;
     struct an_image  *recon;
 };

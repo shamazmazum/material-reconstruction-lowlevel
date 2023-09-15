@@ -8,6 +8,10 @@ layout(std430, binding = 0) buffer lay0 {
     float array[];
 };
 
+layout(std430, binding = 1) buffer lay1 {
+    float result[];
+};
+
 layout(push_constant) uniform Parameters {
     uint len;
 } params;
@@ -29,5 +33,9 @@ void main() {
 
     if (gl_LocalInvocationID.x == 0) {
         array[gl_WorkGroupID.x] = tmp[0];
+    }
+
+    if (gis == 0 && params.len <= GRP_SIZE) {
+        result[0] = tmp[0];
     }
 }
