@@ -129,20 +129,23 @@ an_create_image (struct an_gpu_context *ctx,
 
     image->ctx = ctx;
     image->updateData.ndim = ndim;
-    memcpy(image->updateData.logical_dimensions, dimensions,
-           sizeof (unsigned int) * MAX_DIMENSIONS);
-    memcpy(image->updateData.actual_dimensions, dimensions,
-           sizeof (unsigned int) * MAX_DIMENSIONS);
-    image->updateData.actual_dimensions[image->updateData.ndim-1] =
-        image->updateData.actual_dimensions[image->updateData.ndim-1] / 2 + 1;
     image->actual_size = 1;
 
-    /* FIXME: Isn't it all the way around? */
+    for (int i = 0; i < image->updateData.ndim; i++) {
+        image->updateData.logical_dimensions[i] = dimensions[image->updateData.ndim - i - 1];
+        image->updateData.actual_dimensions[i] = dimensions[image->updateData.ndim - i - 1];
+    }
+
+    image->updateData.actual_dimensions[0] =
+        image->updateData.actual_dimensions[0] / 2 + 1;
+
     for (int i = 0; i < image->updateData.ndim; i++) {
         image->updateData.stride[i] = 1;
-        for (int j = i + 1; j < image->updateData.ndim; j++) {
-            image->updateData.stride[i] *= image->updateData.actual_dimensions[j];
-        }
+    }
+
+    for (int i = 1; i < image->updateData.ndim; i++) {
+        image->updateData.stride[i] = image->updateData.stride[i-1] *
+            image->updateData.actual_dimensions[i-1];
     }
 
     for (int i = 0; i < image->updateData.ndim; i++) {
@@ -258,8 +261,10 @@ an_image_update_fft (struct an_image    *image,
 
     struct an_gpu_context *ctx = image->ctx;
     an_image_synchronize (image);
-    memcpy(image->uniformPtr->point, coord, sizeof (unsigned int) * ndim);
     image->uniformPtr->c = delta;
+    for (int i = 0; i < image->updateData.ndim; i++) {
+        image->uniformPtr->point[i] = coord[image->updateData.ndim - i - 1];
+    }
 
     VkSubmitInfo submitInfo;
     ZERO(submitInfo);
