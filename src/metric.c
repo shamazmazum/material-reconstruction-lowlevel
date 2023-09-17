@@ -210,8 +210,7 @@ an_create_metric (struct an_gpu_context *ctx,
     metric->target = target;
 
     metric->metricMemory =
-        an_create_buffer (ctx,VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-                          VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+        an_create_buffer (ctx,VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                           VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                           recon->actual_size * sizeof(float));
     if (metric->metricMemory == NULL) {
